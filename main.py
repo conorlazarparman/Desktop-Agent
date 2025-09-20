@@ -13,6 +13,19 @@ def log_index(index):
             print(f"   -> {s}")
     print("====================\n")
 
+def log_launch(shortcut_path):
+    import win32com.client
+    from pathlib import Path
+
+    shell = win32com.client.Dispatch("WScript.Shell")
+    sc = shell.CreateShortCut(shortcut_path)
+
+    print("\n=== Launch Debug Info ===")
+    print(f"LNK name:   {Path(shortcut_path).name}")
+    print(f"LNK path:   {shortcut_path}")
+    print(f"Target exe: {sc.Targetpath}")
+    print("=========================\n")
+
 START_MENU_DIRS = [
     Path(os.environ["APPDATA"]) / r"Microsoft\Windows\Start Menu\Programs",
     Path(os.environ["PROGRAMDATA"]) / r"Microsoft\Windows\Start Menu\Programs",
