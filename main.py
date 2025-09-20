@@ -112,6 +112,10 @@ def main():
     print("Indexing apps...")
     index = build_name_index()
     print(f"Indexed {sum(len(v) for v in index.values())} shortcuts.")
+
+    # log all apps/shortcuts
+    log_index(index)
+    
     print('Press Enter to talk; say: "open <app>" (Ctrl+C to quit).')
     while True:
         input()
