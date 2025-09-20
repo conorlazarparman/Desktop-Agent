@@ -1,0 +1,3 @@
+- navigate to desktop-agent directory in powershell/terminal
+- type .\.venv\Scripts\activate
+- type python main.py
