@@ -1,3 +1,5 @@
+import psutil
+
 def log_index(index):
     print("\n=== Indexed Apps ===")
     for name, shortcuts in sorted(index.items()):
@@ -17,3 +19,11 @@ def log_launch(entry):
     else:
         print(f"AUMID:    {entry['aumid']}")
     print("=========================\n")
+
+def list_processes():
+    print("=== Running Processes ===")
+    for p in psutil.process_iter(["pid","name","exe","username"]):
+        try:
+            print(p.info)
+        except psutil.Error:
+            pass
