@@ -5,124 +5,9 @@ from fuzzywuzzy import fuzz, process
 import subprocess
 import win32com.client
 USE_WHISPER = True
-
-def log_index(index):
-    print("\n=== Indexed Apps ===")
-    for name, shortcuts in sorted(index.items()):
-        print(f"{name}:")
-        for s in shortcuts:
-            print(f"   -> {s}")
-    print("====================\n")
-
-def log_launch(entry):
-    print("\n=== Launch Debug Info ===")
-    print(f"Type:     {entry['type']}")
-    print(f"Display:  {entry.get('display','')}")
-    if entry["type"] == "lnk":
-        print(f"LNK:      {entry['lnk']}")
-        print(f"Target:   {entry.get('target','')}")
-        print(f"Args:     {entry.get('args','')}")
-    else:
-        print(f"AUMID:    {entry['aumid']}")
-    print("=========================\n")
-
-
-START_MENU_DIRS = [
-    Path(os.environ["APPDATA"]) / r"Microsoft\Windows\Start Menu\Programs",
-    Path(os.environ["PROGRAMDATA"]) / r"Microsoft\Windows\Start Menu\Programs",
-]
-
-def _add_aliases(name: str) -> set[str]:
-    n = normalize(name)
-    names = {n}
-    if "google chrome" in n:
-        names.add("chrome")
-    if "microsoft edge" in n:
-        names.add("edge")
-    if "windows store" in n or "microsoft store" in n:
-        names.update({"store", "microsoft store"})
-    return names
-
-def _resolve_shortcut(lnk_path: Path):
-    shell = win32com.client.Dispatch("WScript.Shell")
-    sc = shell.CreateShortCut(str(lnk_path))
-    return {
-        "display": (sc.Description or lnk_path.stem).strip(),
-        "lnk": str(lnk_path),
-        "target": sc.Targetpath or "",
-        "args": sc.Arguments or "",
-    }
-
-def _enumerate_store_apps():
-    """Return list of {'name': display_name, 'aumid': app_user_model_id} from shell:AppsFolder."""
-    shell = win32com.client.Dispatch("Shell.Application")
-    folder = shell.NameSpace("shell:AppsFolder")
-    items = folder.Items()
-    apps = []
-    # Iterate items; many are UWP, some are Win32. UWP ones have AUMID-like path with '!' bang.
-    for i in range(items.Count):
-        it = items.Item(i)
-        name = it.Name  # display name shown in Start
-        aumid = it.Path  # often looks like 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App'
-        if name and aumid and "!" in aumid:  # heuristic to keep true UWP entries
-            apps.append({"name": name, "aumid": aumid})
-    return apps
-
-def find_shortcuts():
-    links = []
-    for root in START_MENU_DIRS:
-        for p in root.rglob("*.lnk"):
-            links.append(p)
-    return links
-
-def normalize(name: str) -> str:
-    n = name.lower()
-    junk = ["(x64)", "(x86)", "inc.", "ltd.", "microsoft ", "corporation", "app"]
-    for j in junk:
-        n = n.replace(j, "")
-    return n.strip()
-
-def build_name_index():
-    index = {}  # normalized name -> list of launch specs
-
-    # 1) Include classic desktop apps from Start Menu shortcuts
-    for root in START_MENU_DIRS:
-        for lnk in Path(root).rglob("*.lnk"):
-            try:
-                info = _resolve_shortcut(lnk)
-                # Optional pruning: keep only real apps (EXE targets) and skip docs/uninstallers
-                t = info["target"].lower()
-                base = Path(lnk).stem.lower()
-                junk_words = ("uninstall", "help", "readme", "manual", "documentation", "support", "website")
-                if (not t.endswith(".exe")) or any(w in base for w in junk_words):
-                    continue
-
-                for alias in _add_aliases(info["display"]):
-                    index.setdefault(alias, []).append({
-                        "type": "lnk",
-                        "display": info["display"],
-                        "lnk": info["lnk"],
-                        "target": info["target"],
-                        "args": info["args"],
-                    })
-            except Exception:
-                pass
-
-    # 2) Include Microsoft Store (UWP) apps from AppsFolder
-    for app in _enumerate_store_apps():
-        display = app["name"].strip()
-        for alias in _add_aliases(display):
-            # Avoid duplicates if a Win32 alias with same display already exists
-            exists = any(e.get("display", "").lower() == display.lower() for e in index.get(alias, []))
-            if exists:
-                continue
-            index.setdefault(alias, []).append({
-                "type": "uwp",
-                "display": display,
-                "aumid": app["aumid"],
-            })
-
-    return index
+from helpers.logging import log_launch, log_index
+from helpers.linkProcessing import START_MENU_DIRS, _resolve_shortcut, _add_aliases, _enumerate_store_apps, normalize
+from helpers.indexing import build_name_index
 
 def best_match(query, index):
     candidates = list(index.keys())
@@ -177,7 +62,8 @@ def parse_and_act(utterance, index):
     u = utterance.lower().strip()
     if not u:
         return "Didn’t catch that."
-    # simple intent
+
+    # opening
     if u.startswith("open "):
         app = u.replace("open ", "", 1)
         match, path = best_match(app, index)
@@ -186,7 +72,21 @@ def parse_and_act(utterance, index):
         launch(path)
         log_launch(path)
         return f"Opening {match}."
-    return "Say: “open <app>”."
+    
+    #listing processes
+    if u.startswith("list processes"):
+        list_processes()
+        return "Listed running processes."
+    return "Say your commands."
+
+import psutil
+def list_processes():
+    print("=== Running Processes ===")
+    for p in psutil.process_iter(["pid","name","exe","username"]):
+        try:
+            print(p.info)
+        except psutil.Error:
+            pass
 
 def main():
     print("Indexing apps...")
