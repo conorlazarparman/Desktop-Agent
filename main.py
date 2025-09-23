@@ -1,12 +1,10 @@
 # jarvis_open_app.py
-import os
-import subprocess
 from helpers.logging import log_launch, log_index, list_processes
-from helpers.linkProcessing import START_MENU_DIRS, _resolve_shortcut, _add_aliases, _enumerate_store_apps, normalize
 from helpers.indexing import build_name_index
 from helpers.searching import best_match
 from helpers.listening import listen_text_once
 from capabilities.launch import launch
+from capabilities.close import close_entry
 
 def parse_and_act(utterance, index):
     u = utterance.lower().strip()
@@ -16,13 +14,27 @@ def parse_and_act(utterance, index):
     # opening
     if u.startswith("open "):
         app = u.replace("open ", "", 1)
-        match, path = best_match(app, index)
-        if not match:
+        display, entry = best_match(app, index)
+        if not entry:
             return f"Couldn’t find an app like “{app}”."
-        launch(path)
-        log_launch(path)
-        return f"Opening {match}."
+        launch(entry)
+        return f"Opening {display}."
     
+    #closing
+    if u.startswith("close "):
+        app = u.replace("close ", "", 1)
+        display, entry = best_match(app, index)
+        if not entry:
+            return f"Couldn’t find an app like “{app}”."
+        terminated, killed = close_entry(entry, force=False)
+        if terminated or killed:
+            msg = f"Closed {display} ({terminated} terminated"
+            if killed: msg += f", {killed} killed"
+            msg += ")."
+            return msg
+        else:
+            return f"Didn’t find any running processes for {display}."
+
     #listing processes
     if u.startswith("list processes"):
         list_processes()

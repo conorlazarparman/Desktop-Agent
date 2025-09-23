@@ -1,44 +1,76 @@
 from helpers.linkProcessing import START_MENU_DIRS, _resolve_shortcut, _add_aliases, _enumerate_store_apps
 from pathlib import Path
 
-def build_name_index():
-    index = {}  # normalized name -> list of launch specs
+JUNK_WORDS = {"uninstall","help","readme","manual","documentation","support","website","release notes"}
+UWP_PROC_HINTS = {
+    "microsoft.windowsstore": {"winstore.app.exe","applicationframehost.exe"},
+    "microsoft.windowscalculator": {"applicationframehost.exe"},
+    "microsoft.todos": {"applicationframehost.exe"},
+    "microsoft.edge": {"msedge.exe"},
+}
 
-    # 1) Include classic desktop apps from Start Menu shortcuts
+def build_name_index():
+    """
+    Returns: dict normalized_name -> [entry,...]
+    entry for Win32 (.lnk):
+      {"type":"lnk","display","lnk","target","args",
+       "exe_path","exe_name","expected_proc_names","expected_proc_paths"}
+    entry for UWP:
+      {"type":"uwp","display","aumid","expected_proc_names","expected_proc_paths": set()}
+    """
+    index = {}
+
+    # 1) Win32 apps from Start Menu shortcuts
     for root in START_MENU_DIRS:
         for lnk in Path(root).rglob("*.lnk"):
             try:
                 info = _resolve_shortcut(lnk)
-                # Optional pruning: keep only real apps (EXE targets) and skip docs/uninstallers
-                t = info["target"].lower()
                 base = Path(lnk).stem.lower()
-                junk_words = ("uninstall", "help", "readme", "manual", "documentation", "support", "website")
-                if (not t.endswith(".exe")) or any(w in base for w in junk_words):
+                t = (info["target"] or "").lower()
+                if any(w in base for w in JUNK_WORDS): 
                     continue
+                if not t.endswith(".exe"):
+                    continue  # skip docs/web/uninstallers
 
+                exe_path = str(Path(info["target"]).resolve())
+                exe_name = Path(exe_path).name.lower()
+
+                entry = {
+                    "type": "lnk",
+                    "display": info["display"],
+                    "lnk": info["lnk"],
+                    "target": info["target"],
+                    "args": info["args"],
+                    "exe_path": exe_path,
+                    "exe_name": exe_name,
+                    "expected_proc_names": {exe_name},
+                    "expected_proc_paths": {exe_path.lower()},
+                }
                 for alias in _add_aliases(info["display"]):
-                    index.setdefault(alias, []).append({
-                        "type": "lnk",
-                        "display": info["display"],
-                        "lnk": info["lnk"],
-                        "target": info["target"],
-                        "args": info["args"],
-                    })
+                    index.setdefault(alias, []).append(entry)
             except Exception:
                 pass
 
-    # 2) Include Microsoft Store (UWP) apps from AppsFolder
+    # 2) UWP / Store apps via AppsFolder
     for app in _enumerate_store_apps():
         display = app["name"].strip()
+        aumid = app["aumid"]
+        expected = {"applicationframehost.exe"}
+        aumid_l = aumid.lower()
+        for key, names in UWP_PROC_HINTS.items():
+            if key in aumid_l:
+                expected |= {n.lower() for n in names}
+
+        entry = {
+            "type": "uwp",
+            "display": display,
+            "aumid": aumid,
+            "expected_proc_names": expected,
+            "expected_proc_paths": set(),
+        }
         for alias in _add_aliases(display):
-            # Avoid duplicates if a Win32 alias with same display already exists
-            exists = any(e.get("display", "").lower() == display.lower() for e in index.get(alias, []))
-            if exists:
-                continue
-            index.setdefault(alias, []).append({
-                "type": "uwp",
-                "display": display,
-                "aumid": app["aumid"],
-            })
+            exists = any(e.get("display","").lower()==display.lower() for e in index.get(alias, []))
+            if not exists:
+                index.setdefault(alias, []).append(entry)
 
     return index
