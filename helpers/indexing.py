@@ -8,6 +8,19 @@ UWP_PROC_HINTS = {
     "microsoft.todos": {"applicationframehost.exe"},
     "microsoft.edge": {"msedge.exe"},
 }
+# Hand-tuned aliases for common apps that don't map cleanly from exe -> spoken name
+EXE_ALIAS = {
+    "msedge.exe": {"edge", "microsoft edge"},
+    "chrome.exe": {"chrome", "google chrome"},
+    "code.exe": {"code", "vscode", "visual studio code"},
+    "devenv.exe": {"visual studio", "vs", "visual studio 2022"},
+    "winword.exe": {"word", "microsoft word"},
+    "excel.exe": {"excel", "microsoft excel"},
+    "powerpnt.exe": {"powerpoint", "microsoft powerpoint"},
+    "vlc.exe": {"vlc", "vlc media player"},
+    "robloxplayerbeta.exe": {"roblox", "roblox player"},
+    "robloxstudioinstaller.exe": {"roblox studio"},   # installer; real proc differs at runtime
+}
 
 def build_name_index():
     """
