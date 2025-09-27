@@ -27,3 +27,15 @@ def list_processes():
             print(p.info)
         except psutil.Error:
             pass
+
+def log_aliases(index):
+    print("\n=== Aliases in Index ===")
+    for alias, entries in sorted(index.items()):
+        print(f"Alias: '{alias}'")
+        for entry in entries:
+            display = entry.get("display", "")
+            etype = entry.get("type", "")
+            exe_name = entry.get("exe_name", "")
+            aumid = entry.get("aumid", "")
+            print(f"   -> Type: {etype}, Display: '{display}', Exe: '{exe_name}', AUMID: '{aumid}'")
+    print("========================\n")

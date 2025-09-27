@@ -1,56 +1,38 @@
-from helpers.linkProcessing import START_MENU_DIRS, _resolve_shortcut, _add_aliases, _enumerate_store_apps
+from helpers.linkProcessing import _resolve_shortcut, START_MENU_DIRS, _add_aliases, _enumerate_store_apps, UWP_PROC_HINTS, SKIP_TARGET_EXE, JUNK_WORDS, _dedupe_push
 from pathlib import Path
-
-JUNK_WORDS = {"uninstall","help","readme","manual","documentation","support","website","release notes"}
-UWP_PROC_HINTS = {
-    "microsoft.windowsstore": {"winstore.app.exe","applicationframehost.exe"},
-    "microsoft.windowscalculator": {"applicationframehost.exe"},
-    "microsoft.todos": {"applicationframehost.exe"},
-    "microsoft.edge": {"msedge.exe"},
-}
-# Hand-tuned aliases for common apps that don't map cleanly from exe -> spoken name
-EXE_ALIAS = {
-    "msedge.exe": {"edge", "microsoft edge"},
-    "chrome.exe": {"chrome", "google chrome"},
-    "code.exe": {"code", "vscode", "visual studio code"},
-    "devenv.exe": {"visual studio", "vs", "visual studio 2022"},
-    "winword.exe": {"word", "microsoft word"},
-    "excel.exe": {"excel", "microsoft excel"},
-    "powerpnt.exe": {"powerpoint", "microsoft powerpoint"},
-    "vlc.exe": {"vlc", "vlc media player"},
-    "robloxplayerbeta.exe": {"roblox", "roblox player"},
-    "robloxstudioinstaller.exe": {"roblox studio"},   # installer; real proc differs at runtime
-}
+from helpers.logging import log_aliases
+import win32com.client
 
 def build_name_index():
     """
     Returns: dict normalized_name -> [entry,...]
-    entry for Win32 (.lnk):
+    Win32 entry:
       {"type":"lnk","display","lnk","target","args",
        "exe_path","exe_name","expected_proc_names","expected_proc_paths"}
-    entry for UWP:
+    UWP entry:
       {"type":"uwp","display","aumid","expected_proc_names","expected_proc_paths": set()}
     """
-    index = {}
+    index: dict[str, list[dict]] = {}
 
     # 1) Win32 apps from Start Menu shortcuts
     for root in START_MENU_DIRS:
         for lnk in Path(root).rglob("*.lnk"):
             try:
                 info = _resolve_shortcut(lnk)
-                base = Path(lnk).stem.lower()
-                t = (info["target"] or "").lower()
-                if any(w in base for w in JUNK_WORDS): 
+                base = lnk.stem.lower()
+                t = (info["target"] or "").strip()
+                if any(w in base for w in JUNK_WORDS):
                     continue
-                if not t.endswith(".exe"):
+                if not t.lower().endswith(".exe"):
                     continue  # skip docs/web/uninstallers
+                exe_name = Path(t).name.lower()
+                if exe_name in SKIP_TARGET_EXE:
+                    continue  # skip control panel, open-folder, etc.
 
-                exe_path = str(Path(info["target"]).resolve())
-                exe_name = Path(exe_path).name.lower()
-
+                exe_path = str(Path(t).resolve())
                 entry = {
                     "type": "lnk",
-                    "display": info["display"],
+                    "display": info["display"],       # <-- stem preferred
                     "lnk": info["lnk"],
                     "target": info["target"],
                     "args": info["args"],
@@ -59,10 +41,15 @@ def build_name_index():
                     "expected_proc_names": {exe_name},
                     "expected_proc_paths": {exe_path.lower()},
                 }
-                for alias in _add_aliases(info["display"]):
-                    index.setdefault(alias, []).append(entry)
-            except Exception:
+
+                # aliases: display + desc + exe-derived (incl. Edge/Office hand-tuned)
+                for alias in _add_aliases(
+                        info["display"], exe_name=exe_name, alt_desc=info.get("alt_desc")):
+                    _dedupe_push(index, alias, entry)
+            except Exception as e:
+                print(f"[index] failed on {lnk}: {e}")
                 pass
+
 
     # 2) UWP / Store apps via AppsFolder
     for app in _enumerate_store_apps():
@@ -82,8 +69,8 @@ def build_name_index():
             "expected_proc_paths": set(),
         }
         for alias in _add_aliases(display):
-            exists = any(e.get("display","").lower()==display.lower() for e in index.get(alias, []))
-            if not exists:
-                index.setdefault(alias, []).append(entry)
+            _dedupe_push(index, alias, entry)
+        
+    log_aliases(index)  # Debug: log all aliases after UWP addition
 
     return index
