@@ -49,13 +49,13 @@ def main():
     # log all apps/shortcuts
     log_index(index)
     
-    # print('Press Enter to talk; say: "open <app>" (Ctrl+C to quit).')
-    # while True:
-    #     input()
-    #     utt = listen_text_once()
-    #     print("Heard:", utt)
-    #     resp = parse_and_act(utt, index)
-    #     print(resp)
+    print('Press Enter to talk; say: "open <app>" (Ctrl+C to quit).')
+    while True:
+        input()
+        utt = listen_text_once()
+        print("Heard:", utt)
+        resp = parse_and_act(utt, index)
+        print(resp)
 
     #test run for UWP app processes
     # list_processes()
