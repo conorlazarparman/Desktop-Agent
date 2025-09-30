@@ -1,7 +1,11 @@
-from helpers.linkProcessing import _resolve_shortcut, START_MENU_DIRS, _add_aliases, _enumerate_store_apps, UWP_PROC_HINTS, SKIP_TARGET_EXE, JUNK_WORDS, _dedupe_push
+from helpers.linkProcessing import (
+    _resolve_shortcut, START_MENU_DIRS, _add_aliases, _enumerate_store_apps,
+    UWP_PROC_HINTS, SKIP_TARGET_EXE, JUNK_WORDS, _dedupe_push
+)
 from pathlib import Path
 from helpers.logging import log_aliases
 import win32com.client
+import psutil  # <-- added
 
 def build_name_index():
     """
@@ -13,6 +17,13 @@ def build_name_index():
       {"type":"uwp","display","aumid","expected_proc_names","expected_proc_paths": set()}
     """
     index: dict[str, list[dict]] = {}
+
+    # Snapshot running process names once (runtime fallback for UWP below)
+    try:
+        running_names = { (p.info.get("name") or "").lower()
+                          for p in psutil.process_iter(attrs=["name"]) }
+    except Exception:
+        running_names = set()
 
     # 1) Win32 apps from Start Menu shortcuts
     for root in START_MENU_DIRS:
@@ -50,16 +61,28 @@ def build_name_index():
                 print(f"[index] failed on {lnk}: {e}")
                 pass
 
-
     # 2) UWP / Store apps via AppsFolder
     for app in _enumerate_store_apps():
         display = app["name"].strip()
         aumid = app["aumid"]
         expected = {"applicationframehost.exe"}
         aumid_l = aumid.lower()
+
+        # existing generic hints
         for key, names in UWP_PROC_HINTS.items():
             if key in aumid_l:
                 expected |= {n.lower() for n in names}
+
+        # ---- Generic runtime fallback:
+        # If display is a single word (no spaces) and a process named "<display>.exe"
+        # is actually running right now, add it to expected_proc_names.
+        # e.g., "Notepad" -> "notepad.exe" (fixes your Notepad case without hand-tuning)
+        disp_word = display.strip()
+        if " " not in disp_word:
+            candidate = f"{disp_word.lower()}.exe"
+            if candidate in running_names:
+                expected.add(candidate)
+        # ---- end fallback
 
         entry = {
             "type": "uwp",
@@ -70,7 +93,6 @@ def build_name_index():
         }
         for alias in _add_aliases(display):
             _dedupe_push(index, alias, entry)
-        
-    log_aliases(index)  # Debug: log all aliases after UWP addition
 
+    log_aliases(index)  # Debug: log all aliases after UWP addition
     return index

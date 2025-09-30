@@ -20,11 +20,30 @@ def log_launch(entry):
         print(f"AUMID:    {entry['aumid']}")
     print("=========================\n")
 
-def list_processes():
+def list_processes(index=None):
     print("=== Running Processes ===")
-    for p in psutil.process_iter(["pid","name","exe","username"]):
+    for p in psutil.process_iter(["pid", "name", "exe", "username"]):
         try:
-            print(p.info)
+            info = p.info
+            line = f"{info}"
+
+            # If we have an index, check which entries this process could satisfy
+            if index:
+                pname = (info.get("name") or "").lower()
+                pexe  = (info.get("exe") or "").lower()
+
+                matched_aliases = []
+                for alias, entries in index.items():
+                    for e in entries:
+                        if pname in e.get("expected_proc_names", set()):
+                            matched_aliases.append(f"{alias} (name)")
+                        if pexe and pexe in e.get("expected_proc_paths", set()):
+                            matched_aliases.append(f"{alias} (path)")
+
+                if matched_aliases:
+                    line += "  <-- matches: " + ", ".join(matched_aliases)
+
+            print(line)
         except psutil.Error:
             pass
 
